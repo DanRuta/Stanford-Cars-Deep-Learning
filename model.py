@@ -247,7 +247,6 @@ if __name__ == "__main__":
     with open("data_pre/classes.txt") as f:
         classes = [line for line in f.read().split("\n") if line is not ""]
 
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--m", default="alexnet")
     args = parser.parse_args()
