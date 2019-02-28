@@ -238,8 +238,6 @@ class Model():
         return plt
 
 
-
-
 if __name__ == "__main__":
 
     # Read the classifications
