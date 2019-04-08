@@ -215,8 +215,8 @@ class Model():
 
         datasetGroups = []
         datasetGroups.append(datasets.ImageFolder(traindir, transforms.Compose(augmentationTransforms)))
-        datasetGroups.append(datasets.ImageFolder(valdir, transforms.Compose(augmentationTransforms)))
-        datasetGroups.append(datasets.ImageFolder(testdir, transforms.Compose(augmentationTransforms)))
+        datasetGroups.append(datasets.ImageFolder(valdir, transforms.Compose([transforms.ToTensor(), normalize])))
+        datasetGroups.append(datasets.ImageFolder(testdir, transforms.Compose([transforms.ToTensor(), normalize])))
 
         self.numTrainingSamples = len(datasetGroups[0])
         self.numValidationSamples = len(datasetGroups[1])
