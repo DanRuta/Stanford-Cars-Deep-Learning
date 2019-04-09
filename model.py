@@ -27,14 +27,14 @@ from tensorboardX import SummaryWriter
 
 class Model():
 
-    def __init__ (self, architecture, pretrained, classes, name=None):
+    def __init__ (self, architecture, pretrained, classes, name=None, writer=None):
 
         self.classes = classes
         self.architecture = architecture
         self.batch_size = 4
         self.model = getattr(models, architecture)(pretrained=pretrained)
         self.name = name or architecture
-        self.writer = SummaryWriter()
+        self.writer = writer or SummaryWriter()
 
         self.model.cuda()
         self.model.train(False)
@@ -58,15 +58,20 @@ class Model():
         self.totalValidationIts = 0
         self.totalTestingIts = 0
 
+        self.validationPatience = 3
+
+        self.log = print
+
     def train (self, lr=0.001, weight_decay=0, optimFn="SGD", epochs=1):
 
-        print("\nTraining...")
+        self.log("\nTraining...")
 
         self.model.cuda()
         self.optimizer = getattr(optim, optimFn)(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay)
 
         # Back up current weights
         self.bestModelWeights = copy.deepcopy(self.model.state_dict())
+        self.validationPatienceCounter = 0
         bestLoss = math.inf
         correct = 0
         total = 0
@@ -74,7 +79,7 @@ class Model():
 
         for epoch in range(epochs):
 
-            print("Epoch {}/{}".format(epoch+1, epochs))
+            self.log("Epoch {}/{}".format(epoch+1, epochs))
             lastLoss = None # For TensorboardX
             self.trainingLoss = 0
             self.validationLoss = 0
@@ -87,8 +92,8 @@ class Model():
                 if i % 25 == 0 or i == int(self.numTrainingSamples/self.batch_size)-1:
                     print("\rTraining iteration: {}/{}".format(i*self.batch_size, self.numTrainingSamples), end='', flush=True)
                     if i>0:
-                        self.writer.add_scalar("1.training/loss", lastLoss, self.totalTrainingIts)
-                        self.writer.add_scalar("1.training/accuracy", self.trainingAccuracy*100, self.totalTrainingIts)
+                        self.writer.add_scalar("{}/1.training/loss".format(self.name), lastLoss, self.totalTrainingIts)
+                        self.writer.add_scalar("{}/1.training/accuracy".format(self.name), self.trainingAccuracy*100, self.totalTrainingIts)
 
                 inputs, labels = data
                 inputs, labels = Variable(inputs.cuda()), Variable(labels.cuda())
@@ -117,26 +122,33 @@ class Model():
 
             # Do the same for validation
             if self.numValidationSamples>0:
-                print()
+                self.log()
                 self.validate()
-                self.writer.add_scalar("2.validation/perEpochLoss", self.validationLoss / self.numValidationSamples, epoch)
+                self.writer.add_scalar("{}/2.validation/perEpochLoss".format(self.name), self.validationLoss / self.numValidationSamples, epoch)
 
-            print()
-            print("Epoch {} result: ".format(epoch+1))
-            print("Average loss (train): {:.4f}".format(self.trainingLoss / self.numTrainingSamples))
-            print("Average accuracy (train): {:.4f}%".format(self.trainingAccuracy*100))
-            print("Average loss (val): {:.4f}".format(self.validationLoss / self.numValidationSamples))
-            print("Average accuracy (val): {:.4f}%".format(self.validationAccuracy*100))
-            self.writer.add_scalar("1.training/perEpochLoss", self.trainingLoss / self.numTrainingSamples, epoch)
+            self.log()
+            self.log("Epoch {} result: ".format(epoch+1))
+            self.log("Average loss (train): {:.4f}".format(self.trainingLoss / self.numTrainingSamples))
+            self.log("Average accuracy (train): {:.4f}%".format(self.trainingAccuracy*100))
+            self.log("Average loss (val): {:.4f}".format(self.validationLoss / self.numValidationSamples))
+            self.log("Average accuracy (val): {:.4f}%".format(self.validationAccuracy*100))
+            self.writer.add_scalar("{}/1.training/perEpochLoss".format(self.name), self.trainingLoss / self.numTrainingSamples, epoch)
 
             if self.validationLoss / self.numValidationSamples < bestLoss:
-                print("Deep copying new best model. (Loss of {}, over {})".format(self.validationLoss / self.numValidationSamples, bestLoss))
+                self.log("Deep copying new best model. (Loss of {}, over {})".format(self.validationLoss / self.numValidationSamples, bestLoss))
                 bestLoss = self.validationLoss / self.numValidationSamples
                 self.bestModelWeights = copy.deepcopy(self.model.state_dict())
                 self.bestEpoch = epoch + 1
+            else:
+                self.validationPatienceCounter += 1
 
-            print("-" * 10)
-            print()
+                if self.validationPatienceCounter >= self.validationPatience:
+                    self.log("Validation loss has not improved for {} epochs. Stopping training, and saving the best weights.".format(self.validationPatience))
+                    break
+
+
+            self.log("-" * 10)
+            self.log()
 
         torch.save(self.bestModelWeights, "checkpoints/{}-{}.pt".format(self.name, self.bestEpoch))
 
@@ -154,8 +166,8 @@ class Model():
                 if i % 25 == 0 or i == int(self.numValidationSamples/self.batch_size)-1:
                     print("\rValidation iteration: {}/{}".format(i*self.batch_size, self.numValidationSamples), end='', flush=True)
                     if i>0:
-                        self.writer.add_scalar("2.validation/loss", lastLoss, self.totalValidationIts)
-                        self.writer.add_scalar("2.validation/accuracy", self.validationAccuracy*100, self.totalValidationIts)
+                        self.writer.add_scalar("{}/2.validation/loss".format(self.name), lastLoss, self.totalValidationIts)
+                        self.writer.add_scalar("{}/2.validation/accuracy".format(self.name), self.validationAccuracy*100, self.totalValidationIts)
 
                 inputs, labels = data
                 inputs, labels = Variable(inputs.cuda()), Variable(labels.cuda())
@@ -195,16 +207,16 @@ class Model():
         # Confusion Matrix
         confusionMatrix = meter.ConfusionMeter(len(self.classes))
 
-        print("\nTesting...")
+        self.log("\nTesting...")
         with torch.no_grad():
 
             for i, data in enumerate(self.dataLoaders[2]):
                 if i % 25 == 0 or i == int(self.numTestSamples/self.batch_size)-1:
                     print("\rTest iteration: {}/{}".format(i*self.batch_size, self.numTestSamples), end='', flush=True)
                     if i>0:
-                        self.writer.add_scalar("3.test/loss", lastLoss, self.totalTestingIts)
-                        self.writer.add_scalar("3.test/top5", self.top5/(i*self.batch_size), self.totalTestingIts)
-                        self.writer.add_scalar("3.test/accuracy", self.testAccuracy*100, self.totalTestingIts)
+                        self.writer.add_scalar("{}/3.test/loss".format(self.name), lastLoss, self.totalTestingIts)
+                        self.writer.add_scalar("{}/3.test/top5".format(self.name), self.top5/(i*self.batch_size), self.totalTestingIts)
+                        self.writer.add_scalar("{}/3.test/accuracy".format(self.name), self.testAccuracy*100, self.totalTestingIts)
 
                 self.model.eval()
 
@@ -244,13 +256,13 @@ class Model():
                 torch.cuda.empty_cache()
                 self.totalTestingIts += self.batch_size
 
-            print()
+            self.log()
 
         loss = self.testLoss / self.numTestSamples
         top5 = self.top5 / self.numTestSamples
-        print("Average loss (test): {:.4f}".format(loss))
-        print("Average accuracy (test): {:.4f}%".format(self.testAccuracy*100))
-        print("Top 5 accuracy (test): {:.4f}%".format(top5 * 100))
+        self.log("Average loss (test): {:.4f}".format(loss))
+        self.log("Average accuracy (test): {:.4f}%".format(self.testAccuracy*100))
+        self.log("Top 5 accuracy (test): {:.4f}%".format(top5 * 100))
 
         self.getMetrics(confusionMatrix, loss, self.testAccuracy, top5)
 
@@ -364,8 +376,11 @@ class Model():
 
 
     def loadCheckpoint (self, path):
-        print("Loading checkpoint at {}".format(path))
+        self.log("Loading checkpoint at {}".format(path))
         self.model.load_state_dict(torch.load(path))
+
+    def setLogger (self, logger):
+        self.log = logger.log
 
 
 if __name__ == "__main__":
