@@ -75,6 +75,7 @@ class Model():
         for epoch in range(epochs):
 
             print("Epoch {}/{}".format(epoch+1, epochs))
+            lastLoss = None # For TensorboardX
             self.trainingLoss = 0
             self.validationLoss = 0
             self.trainingAccuracy = 0
@@ -86,9 +87,8 @@ class Model():
                 if i % 25 == 0 or i == int(self.numTrainingSamples/self.batch_size)-1:
                     print("\rTraining iteration: {}/{}".format(i*self.batch_size, self.numTrainingSamples), end='', flush=True)
                     if i>0:
-                        self.writer.add_scalar("1.training/loss", self.trainingLoss/(i*self.batch_size), self.totalTrainingIts)
-                        self.writer.add_scalar("1.training/accuracy", self.trainingAccuracy/(i*self.batch_size), self.totalTrainingIts)
-                        self.writer.add_scalar("1.training/newAccuracy", correct/total*100, self.totalTrainingIts)
+                        self.writer.add_scalar("1.training/loss", lastLoss, self.totalTrainingIts)
+                        self.writer.add_scalar("1.training/accuracy", self.trainingAccuracy*100, self.totalTrainingIts)
 
                 inputs, labels = data
                 inputs, labels = Variable(inputs.cuda()), Variable(labels.cuda())
@@ -102,11 +102,12 @@ class Model():
                 loss.backward()
                 self.optimizer.step()
 
-                self.trainingLoss += loss.data.item()
-                self.trainingAccuracy += torch.sum(preds == labels.data)
-
                 total += labels.size(0)
                 correct += (preds == labels).sum().item()
+
+                lastLoss = loss.data.item()
+                self.trainingLoss += loss.data.item()
+                self.trainingAccuracy = correct/total
 
                 del inputs, labels, outputs, preds
                 torch.cuda.empty_cache()
@@ -123,9 +124,9 @@ class Model():
             print()
             print("Epoch {} result: ".format(epoch+1))
             print("Average loss (train): {:.4f}".format(self.trainingLoss / self.numTrainingSamples))
-            print("Average accuracy (train): {:.4f}".format(self.trainingAccuracy / self.numTrainingSamples))
+            print("Average accuracy (train): {:.4f}%".format(self.trainingAccuracy*100))
             print("Average loss (val): {:.4f}".format(self.validationLoss / self.numValidationSamples))
-            print("Average accuracy (val): {:.4f}".format(self.validationAccuracy / self.numValidationSamples))
+            print("Average accuracy (val): {:.4f}%".format(self.validationAccuracy*100))
             self.writer.add_scalar("1.training/perEpochLoss", self.trainingLoss / self.numTrainingSamples, epoch)
 
             if self.validationLoss / self.numValidationSamples < bestLoss:
@@ -142,6 +143,7 @@ class Model():
 
     def validate (self):
 
+        lastLoss = None # For TensorboardX
         correct = 0
         total = 0
         self.model.eval()
@@ -152,9 +154,8 @@ class Model():
                 if i % 25 == 0 or i == int(self.numValidationSamples/self.batch_size)-1:
                     print("\rValidation iteration: {}/{}".format(i*self.batch_size, self.numValidationSamples), end='', flush=True)
                     if i>0:
-                        self.writer.add_scalar("2.validation/loss", self.validationLoss/(i*self.batch_size), self.totalValidationIts)
-                        self.writer.add_scalar("2.validation/accuracy", self.validationAccuracy/(i*self.batch_size), self.totalValidationIts)
-                        self.writer.add_scalar("2.validation/newAccuracy", correct/total*100, self.totalValidationIts)
+                        self.writer.add_scalar("2.validation/loss", lastLoss, self.totalValidationIts)
+                        self.writer.add_scalar("2.validation/accuracy", self.validationAccuracy*100, self.totalValidationIts)
 
                 inputs, labels = data
                 inputs, labels = Variable(inputs.cuda()), Variable(labels.cuda())
@@ -165,11 +166,12 @@ class Model():
                 _, preds = torch.max(outputs.data, 1)
                 loss = self.criterion(outputs, labels)
 
-                self.validationLoss += loss.data.item()
-                self.validationAccuracy += torch.sum(preds == labels.data)
-
                 total += labels.size(0)
                 correct += (preds == labels).sum().item()
+
+                lastLoss = loss.data.item()
+                self.validationLoss += loss.data.item()
+                self.validationAccuracy = correct/total
 
                 del inputs, labels, outputs, preds
                 torch.cuda.empty_cache()
@@ -186,6 +188,7 @@ class Model():
         self.testAccuracy = 0
         self.top5 = 0
 
+        lastLoss = None
         correct = 0
         total = 0
 
@@ -199,10 +202,9 @@ class Model():
                 if i % 25 == 0 or i == int(self.numTestSamples/self.batch_size)-1:
                     print("\rTest iteration: {}/{}".format(i*self.batch_size, self.numTestSamples), end='', flush=True)
                     if i>0:
-                        self.writer.add_scalar("3.test/loss", self.testLoss/(i*self.batch_size), self.totalTestingIts)
-                        self.writer.add_scalar("3.test/accuracy", self.testAccuracy/(i*self.batch_size), self.totalTestingIts)
+                        self.writer.add_scalar("3.test/loss", lastLoss, self.totalTestingIts)
                         self.writer.add_scalar("3.test/top5", self.top5/(i*self.batch_size), self.totalTestingIts)
-                        self.writer.add_scalar("3.test/newAccuracy", correct/total*100, self.totalTestingIts)
+                        self.writer.add_scalar("3.test/accuracy", self.testAccuracy*100, self.totalTestingIts)
 
                 self.model.eval()
 
@@ -214,13 +216,14 @@ class Model():
                 _, preds = torch.max(outputs.data, 1)
                 loss = self.criterion(outputs, labels)
 
-                # Aggregate the total loss and accuracy values
-                self.testLoss += loss.item()
-                self.testAccuracy += torch.sum(preds == labels.data)
-
                 total += labels.size(0)
                 correct += (preds == labels).sum().item()
 
+                # Aggregate the total loss and accuracy values
+                lastLoss = loss.item()
+                self.testLoss += loss.item()
+
+                self.testAccuracy = correct/total
                 self.top5 += self.getTopKAccuracy(outputs, labels, 5)
 
                 # Add to confusion matrix
@@ -242,19 +245,16 @@ class Model():
                 self.totalTestingIts += self.batch_size
 
             print()
-            print("Average loss (test): {:.4f}".format(self.testLoss / self.numTestSamples))
-            print("Average accuracy (test): {:.4f}".format(self.testAccuracy / self.numTestSamples))
-
-
-            print("New: {}".format(100 * correct / total))
-            print("self.numTestSamples: {}".format(self.numTestSamples))
 
         loss = self.testLoss / self.numTestSamples
-        accuracy = self.testAccuracy / self.numTestSamples
         top5 = self.top5 / self.numTestSamples
-        self.getMetrics(confusionMatrix, loss, accuracy, top5)
+        print("Average loss (test): {:.4f}".format(loss))
+        print("Average accuracy (test): {:.4f}%".format(self.testAccuracy*100))
+        print("Top 5 accuracy (test): {:.4f}%".format(top5 * 100))
 
-        return loss, accuracy, top5
+        self.getMetrics(confusionMatrix, loss, self.testAccuracy, top5)
+
+        return loss, self.testAccuracy, top5
 
 
     def loadData (self, split, augmentations):
@@ -311,10 +311,15 @@ class Model():
             f.write(report)
 
         # Confusion Matrix
-        # self.plotConfMatrix(conf.value(), "checkpoints/{}-{}".format(self.name, self.bestEpoch))
-        conf.normalized = True
-        self.plotConfMatrix(conf.value(), "checkpoints/{}-{}_n".format(self.name, self.bestEpoch))
 
+        # Too many classes break the confusion matrix plot, so manually render a heatmap using OpenCV instead
+        if len(self.classes) > 20:
+            conf.normalized = True
+            self.plotConfHeatmap(conf.value(), "checkpoints/{}-{}_n".format(self.name, self.bestEpoch))
+        else:
+            self.plotConfMatrix(conf.value(), "checkpoints/{}-{}".format(self.name, self.bestEpoch))
+            conf.normalized = True
+            self.plotConfMatrix(conf.value(), "checkpoints/{}-{}_n".format(self.name, self.bestEpoch))
 
     # https://gist.github.com/weiaicunzai/2a5ae6eac6712c70bde0630f3e76b77b
     def getTopKAccuracy (self, output, labels, k):
@@ -330,34 +335,32 @@ class Model():
         return correct_k.item()
 
 
+    def plotConfHeatmap (self, conf, path):
+        largestVal = -math.inf
+
+        for row in conf:
+            for col in row:
+                if col>largestVal:
+                    largestVal = col
+
+        outputFrame = []
+        for row in conf:
+            outputFrameRow = []
+            for col in row:
+                outputFrameRow.append(col/largestVal*255)
+            outputFrame.append(outputFrameRow)
+
+        outputFrame = cv.UMat(np.uint8(np.array(outputFrame, dtype=int)))
+        cv.imwrite("{}.jpg".format(path), cv.resize(outputFrame, (1600,1600), interpolation=cv.INTER_NEAREST ))
+
+
     def plotConfMatrix (self, conf, path):
-
-        # Too many classes break the confusion matrix plot, so manually render a heatmap using OpenCV instead
-        if len(self.classes) > 20:
-
-            largestVal = -math.inf
-
-            for row in conf:
-                for col in row:
-                    if col>largestVal:
-                        largestVal = col
-
-            outputFrame = []
-            for row in conf:
-                outputFrameRow = []
-                for col in row:
-                    outputFrameRow.append(col/largestVal*255)
-                outputFrame.append(outputFrameRow)
-
-            outputFrame = cv.UMat(np.uint8(np.array(outputFrame, dtype=int)))
-            cv.imwrite("{}.jpg".format(path), cv.resize(outputFrame, (1600,1600), interpolation=cv.INTER_NEAREST ))
-        else:
-            df_cm = pd.DataFrame(conf, self.classes, self.classes)
-            plt.figure(figsize=(15,15))
-            sn.set(font_scale=1.4)
-            sn.heatmap(df_cm, annot=True, annot_kws={"size": 20}, fmt="g")
-            plt.savefig("{}.jpg".format(path))
-            sn.reset_orig()
+        df_cm = pd.DataFrame(conf, self.classes, self.classes)
+        plt.figure(figsize=(15,15))
+        sn.set(font_scale=1.4)
+        sn.heatmap(df_cm, annot=True, annot_kws={"size": 20}, fmt="g")
+        plt.savefig("{}.jpg".format(path))
+        sn.reset_orig()
 
 
     def loadCheckpoint (self, path):
