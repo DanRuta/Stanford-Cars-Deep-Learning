@@ -101,14 +101,7 @@ def preprocess(overwriteData=False, skipWritingFiles=False):
 
 
                 cv.imwrite("./data/{}/{}/{}/{}".format(splitFolder, folder, classification, imgName), newImg)
-
-                # Copy each image 10 times, to allow plenty of different transformations to happen, to each one
-                if folder=="train":
-                    for i in range(0, 10):
-                        cv.imwrite("./data/augmentations/{}/{}/{}/{}_{}".format(splitFolder, folder, classification, i, imgName), newImg)
-                else:
-                    # The validation and test data does not get augmented, and therefore only 1 copy of each image is needed
-                    cv.imwrite("./data/augmentations/{}/{}/{}/{}_{}".format(splitFolder, folder, classification, i, imgName), newImg)
+                cv.imwrite("./data/augmentations/{}/{}/{}/{}".format(splitFolder, folder, classification, imgName), newImg)
 
     print("\nFinished pre-processing data ({} images)".format(totalImages))
 
