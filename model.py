@@ -2,6 +2,10 @@
 import os
 import argparse
 import copy
+import math
+
+import numpy as np
+
 # Pytorch
 import torch
 import torch.nn as nn
@@ -15,7 +19,11 @@ from torchnet import meter
 import seaborn as sn
 import pandas as pd
 import matplotlib.pyplot as plt
+import cv2 as cv
 
+from sklearn.metrics import classification_report
+
+from tensorboardX import SummaryWriter
 
 class Model():
 
@@ -26,6 +34,7 @@ class Model():
         self.batch_size = 4
         self.model = getattr(models, architecture)(pretrained=pretrained)
         self.name = name or architecture
+        self.writer = SummaryWriter()
 
         self.model.cuda()
         self.model.train(False)
@@ -44,19 +53,23 @@ class Model():
         # Overwrite with new topology
         self.model.classifier = nn.Sequential(*lastLayers)
         self.criterion = nn.CrossEntropyLoss()
+        self.bestEpoch = 1
+        self.totalTrainingIts = 0
+        self.totalValidationIts = 0
+        self.totalTestingIts = 0
 
     def train (self, lr=0.001, weight_decay=0, optimFn="SGD", epochs=1):
 
-        print("training...")
+        print("\nTraining...")
 
-        # self.optimizer = optim.SGD(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay)
-        self.optimizer = getattr(optim, optimFn)(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay)
         self.model.cuda()
+        self.optimizer = getattr(optim, optimFn)(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay)
 
         # Back up current weights
         self.bestModelWeights = copy.deepcopy(self.model.state_dict())
-        bestAccuracy = 0.0
-        self.bestEpoch = 1
+        bestLoss = math.inf
+        correct = 0
+        total = 0
 
 
         for epoch in range(epochs):
@@ -67,11 +80,15 @@ class Model():
             self.trainingAccuracy = 0
             self.validationAccuracy = 0
 
-            self.model.train(True)
+            self.model.train()
 
             for i, data in enumerate(self.dataLoaders[0]):
-                if i % 100 == 0:
-                    print("\rTraining batch {}/{}".format(i, int(self.numTrainingSamples/self.batch_size)), end='', flush=True)
+                if i % 25 == 0 or i == int(self.numTrainingSamples/self.batch_size)-1:
+                    print("\rTraining iteration: {}/{}".format(i*self.batch_size, self.numTrainingSamples), end='', flush=True)
+                    if i>0:
+                        self.writer.add_scalar("1.training/loss", self.trainingLoss/(i*self.batch_size), self.totalTrainingIts)
+                        self.writer.add_scalar("1.training/accuracy", self.trainingAccuracy/(i*self.batch_size), self.totalTrainingIts)
+                        self.writer.add_scalar("1.training/newAccuracy", correct/total*100, self.totalTrainingIts)
 
                 inputs, labels = data
                 inputs, labels = Variable(inputs.cuda()), Variable(labels.cuda())
@@ -88,16 +105,20 @@ class Model():
                 self.trainingLoss += loss.data.item()
                 self.trainingAccuracy += torch.sum(preds == labels.data)
 
+                total += labels.size(0)
+                correct += (preds == labels).sum().item()
+
                 del inputs, labels, outputs, preds
                 torch.cuda.empty_cache()
+                self.totalTrainingIts += self.batch_size
 
-            self.model.train(False)
             self.model.eval()
 
             # Do the same for validation
             if self.numValidationSamples>0:
                 print()
                 self.validate()
+                self.writer.add_scalar("2.validation/perEpochLoss", self.validationLoss / self.numValidationSamples, epoch)
 
             print()
             print("Epoch {} result: ".format(epoch+1))
@@ -105,57 +126,84 @@ class Model():
             print("Average accuracy (train): {:.4f}".format(self.trainingAccuracy / self.numTrainingSamples))
             print("Average loss (val): {:.4f}".format(self.validationLoss / self.numValidationSamples))
             print("Average accuracy (val): {:.4f}".format(self.validationAccuracy / self.numValidationSamples))
-            print("-" * 10)
-            print()
+            self.writer.add_scalar("1.training/perEpochLoss", self.trainingLoss / self.numTrainingSamples, epoch)
 
-            if self.validationAccuracy / self.numValidationSamples > bestAccuracy:
-                print("Deep copying new best model")
-                bestAccuracy = self.validationAccuracy / self.numValidationSamples
+            if self.validationLoss / self.numValidationSamples < bestLoss:
+                print("Deep copying new best model. (Loss of {}, over {})".format(self.validationLoss / self.numValidationSamples, bestLoss))
+                bestLoss = self.validationLoss / self.numValidationSamples
                 self.bestModelWeights = copy.deepcopy(self.model.state_dict())
                 self.bestEpoch = epoch + 1
 
+            print("-" * 10)
+            print()
 
-        torch.save(self.model.state_dict(), "checkpoints/{}-{}.pt".format(self.name, self.bestEpoch))
+        torch.save(self.bestModelWeights, "checkpoints/{}-{}.pt".format(self.name, self.bestEpoch))
 
 
     def validate (self):
-        for i, data in enumerate(self.dataLoaders[1]):
 
-            if i % 100 == 0:
-                print("\rValidation batch {}/{}".format(i, int(self.numValidationSamples/self.batch_size)), end='', flush=True)
+        correct = 0
+        total = 0
+        self.model.eval()
 
-            inputs, labels = data
-            inputs, labels = Variable(inputs.cuda()), Variable(labels.cuda())
+        with torch.no_grad():
+            for i, data in enumerate(self.dataLoaders[1]):
 
-            self.optimizer.zero_grad()
-            outputs = self.model(inputs)
+                if i % 25 == 0 or i == int(self.numValidationSamples/self.batch_size)-1:
+                    print("\rValidation iteration: {}/{}".format(i*self.batch_size, self.numValidationSamples), end='', flush=True)
+                    if i>0:
+                        self.writer.add_scalar("2.validation/loss", self.validationLoss/(i*self.batch_size), self.totalValidationIts)
+                        self.writer.add_scalar("2.validation/accuracy", self.validationAccuracy/(i*self.batch_size), self.totalValidationIts)
+                        self.writer.add_scalar("2.validation/newAccuracy", correct/total*100, self.totalValidationIts)
 
-            _, preds = torch.max(outputs.data, 1)
-            loss = self.criterion(outputs, labels)
+                inputs, labels = data
+                inputs, labels = Variable(inputs.cuda()), Variable(labels.cuda())
 
-            self.validationLoss += loss.data.item()
-            self.validationAccuracy += torch.sum(preds == labels.data)
+                self.optimizer.zero_grad()
+                outputs = self.model(inputs)
 
-            del inputs, labels, outputs, preds
-            torch.cuda.empty_cache()
+                _, preds = torch.max(outputs.data, 1)
+                loss = self.criterion(outputs, labels)
+
+                self.validationLoss += loss.data.item()
+                self.validationAccuracy += torch.sum(preds == labels.data)
+
+                total += labels.size(0)
+                correct += (preds == labels).sum().item()
+
+                del inputs, labels, outputs, preds
+                torch.cuda.empty_cache()
+                self.totalValidationIts += self.batch_size
 
 
     def test (self):
+
+        # For sklearn classification report
+        self.correctLabels = []
+        self.predictedLabels = []
+
+        self.testLoss = 0
+        self.testAccuracy = 0
+        self.top5 = 0
+
+        correct = 0
+        total = 0
+
         # Confusion Matrix
         confusionMatrix = meter.ConfusionMeter(len(self.classes))
 
-        print("Testing model")
+        print("\nTesting...")
         with torch.no_grad():
 
-            self.testLoss = 0
-            self.testAccuracy = 0
-
             for i, data in enumerate(self.dataLoaders[2]):
-                if i % 100 == 0:
-                    print("\rTest batch {}/{}".format(i, int(self.numTestSamples/self.batch_size)), end='', flush=True)
+                if i % 25 == 0 or i == int(self.numTestSamples/self.batch_size)-1:
+                    print("\rTest iteration: {}/{}".format(i*self.batch_size, self.numTestSamples), end='', flush=True)
+                    if i>0:
+                        self.writer.add_scalar("3.test/loss", self.testLoss/(i*self.batch_size), self.totalTestingIts)
+                        self.writer.add_scalar("3.test/accuracy", self.testAccuracy/(i*self.batch_size), self.totalTestingIts)
+                        self.writer.add_scalar("3.test/top5", self.top5/(i*self.batch_size), self.totalTestingIts)
+                        self.writer.add_scalar("3.test/newAccuracy", correct/total*100, self.totalTestingIts)
 
-                self.model.train(False)
-                self.model.cuda()
                 self.model.eval()
 
                 inputs, labels = data
@@ -166,25 +214,52 @@ class Model():
                 _, preds = torch.max(outputs.data, 1)
                 loss = self.criterion(outputs, labels)
 
-                # Add to confusion matrix
-                confusionMatrix.add(outputs.data.squeeze(), labels.type(torch.LongTensor))
-
-                self.testLoss += loss.data.item()
+                # Aggregate the total loss and accuracy values
+                self.testLoss += loss.item()
                 self.testAccuracy += torch.sum(preds == labels.data)
+
+                total += labels.size(0)
+                correct += (preds == labels).sum().item()
+
+                self.top5 += self.getTopKAccuracy(outputs, labels, 5)
+
+                # Add to confusion matrix
+                if len(outputs) == self.batch_size:
+                    confusionMatrix.add(outputs.data.squeeze(), labels.type(torch.LongTensor))
+
+                # Collect data for the classification report
+                labelVals = np.array(labels.data.cpu())
+                predVals = np.array(preds.data.cpu())
+
+
+                for b in range(min(len(labelVals), len(predVals))):
+                    self.correctLabels.append(labelVals[b])
+                    self.predictedLabels.append(predVals[b])
+
 
                 del inputs, labels, outputs, preds
                 torch.cuda.empty_cache()
+                self.totalTestingIts += self.batch_size
 
             print()
             print("Average loss (test): {:.4f}".format(self.testLoss / self.numTestSamples))
             print("Average accuracy (test): {:.4f}".format(self.testAccuracy / self.numTestSamples))
 
-        return self.plotConfMatrix(confusionMatrix.conf), self.testLoss / self.numTestSamples
+
+            print("New: {}".format(100 * correct / total))
+            print("self.numTestSamples: {}".format(self.numTestSamples))
+
+        loss = self.testLoss / self.numTestSamples
+        accuracy = self.testAccuracy / self.numTestSamples
+        top5 = self.top5 / self.numTestSamples
+        self.getMetrics(confusionMatrix, loss, accuracy, top5)
+
+        return loss, accuracy, top5
 
 
     def loadData (self, split, augmentations):
         # Look in the augmentations sub-directory, if any augmentations have been selected
-        augPath = augmentations[0] or augmentations[1] or augmentations[2] or augmentations[3]
+        augPath = augmentations[0] or augmentations[1] or augmentations[2]
         augPath = "augmentations/" if augPath else ""
         split = "{}-{}-{}".format(split[0], split[1], split[2])
 
@@ -193,30 +268,28 @@ class Model():
         testdir = os.path.join(os.getcwd(), "data/{}{}/test".format(augPath, split))
         # Expects as input normalized x * H * W images, where H and W have to be at least 224
         # Also needs mean and std as follows:
-        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        normalize = transforms.Normalize(mean=[0.46989, 0.45955, 0.45476], std=[0.266161, 0.265055, 0.269770])
 
         # Build up the required augmentations
+        # https://pytorch.org/docs/stable/torchvision/transforms.html
         augmentationTransforms = []
 
-        if augmentations[0]:
-            augmentationTransforms.append(transforms.RandomResizedCrop(224))
-        else:
-            # The data input must be of this dimensions
-            augmentationTransforms.append(transforms.Resize(224))
+        # The data input must be of this dimensions
+        augmentationTransforms.append(transforms.RandomResizedCrop(224))
 
-        if augmentations[1]:
+        if augmentations[0]:
             augmentationTransforms.append(transforms.RandomHorizontalFlip())
-        if augmentations[2]:
+        if augmentations[1]:
             augmentationTransforms.append(transforms.ColorJitter(0.5, 0.5, 0.5, 0.1))
-        if augmentations[3]:
+        if augmentations[2]:
             augmentationTransforms.append(transforms.RandomRotation(45))
         augmentationTransforms.append(transforms.ToTensor())
         augmentationTransforms.append(normalize)
 
         datasetGroups = []
         datasetGroups.append(datasets.ImageFolder(traindir, transforms.Compose(augmentationTransforms)))
-        datasetGroups.append(datasets.ImageFolder(valdir, transforms.Compose([transforms.ToTensor(), normalize])))
-        datasetGroups.append(datasets.ImageFolder(testdir, transforms.Compose([transforms.ToTensor(), normalize])))
+        datasetGroups.append(datasets.ImageFolder(valdir, transforms.Compose([transforms.RandomResizedCrop(224), transforms.ToTensor(), normalize])))
+        datasetGroups.append(datasets.ImageFolder(testdir, transforms.Compose([transforms.RandomResizedCrop(224), transforms.ToTensor(), normalize])))
 
         self.numTrainingSamples = len(datasetGroups[0])
         self.numValidationSamples = len(datasetGroups[1])
@@ -224,18 +297,72 @@ class Model():
 
         self.dataLoaders = []
         self.dataLoaders.append(torch.utils.data.DataLoader(datasetGroups[0], batch_size=self.batch_size, shuffle=True, num_workers=8))
-        self.dataLoaders.append(torch.utils.data.DataLoader(datasetGroups[1], batch_size=self.batch_size, shuffle=True, num_workers=8))
+        self.dataLoaders.append(torch.utils.data.DataLoader(datasetGroups[1], batch_size=self.batch_size, shuffle=False, num_workers=8))
         self.dataLoaders.append(torch.utils.data.DataLoader(datasetGroups[2], batch_size=self.batch_size, shuffle=False, num_workers=8))
 
 
-    def plotConfMatrix (self, conf):
-        df_cm = pd.DataFrame(conf, self.classes, self.classes)
-        plt.figure(figsize=(10,7))
-        sn.set(font_scale=1.4)
-        sn.heatmap(df_cm, annot=True, annot_kws={"size": 10}, fmt="g")
-        plt.show()
-        plt.savefig("checkpoints/{}-{}.png".format(self.name, self.bestEpoch))
-        return plt
+    def getMetrics(self, conf, loss, accuracy, top5):
+
+        # Classification report
+        report = classification_report(self.correctLabels, self.predictedLabels, target_names=self.classes)
+
+        with open("checkpoints/{}-{}.txt".format(self.name, self.bestEpoch), "w+") as f:
+            f.write("Model: {}\tEpochs: {}\tLoss: {}\tAccuracy: {:.4f}%\tTop 5: {:.4f}%\n".format(self.name, self.bestEpoch, loss, accuracy*100, top5*100))
+            f.write(report)
+
+        # Confusion Matrix
+        # self.plotConfMatrix(conf.value(), "checkpoints/{}-{}".format(self.name, self.bestEpoch))
+        conf.normalized = True
+        self.plotConfMatrix(conf.value(), "checkpoints/{}-{}_n".format(self.name, self.bestEpoch))
+
+
+    # https://gist.github.com/weiaicunzai/2a5ae6eac6712c70bde0630f3e76b77b
+    def getTopKAccuracy (self, output, labels, k):
+
+        _, pred = output.topk(k, 1, True, True)
+        pred = pred.t() # Transpose?
+
+        # Set one hot vector for correct predictions, within the ordered list of highest predictions
+        correct = pred.eq(labels.view(1, -1).expand_as(pred))
+        # Check if the correct predictions are within the top k highest predictions, and sum them up
+        correct_k = correct[:k].view(-1).float().sum(0)
+
+        return correct_k.item()
+
+
+    def plotConfMatrix (self, conf, path):
+
+        # Too many classes break the confusion matrix plot, so manually render a heatmap using OpenCV instead
+        if len(self.classes) > 20:
+
+            largestVal = -math.inf
+
+            for row in conf:
+                for col in row:
+                    if col>largestVal:
+                        largestVal = col
+
+            outputFrame = []
+            for row in conf:
+                outputFrameRow = []
+                for col in row:
+                    outputFrameRow.append(col/largestVal*255)
+                outputFrame.append(outputFrameRow)
+
+            outputFrame = cv.UMat(np.uint8(np.array(outputFrame, dtype=int)))
+            cv.imwrite("{}.jpg".format(path), cv.resize(outputFrame, (1600,1600), interpolation=cv.INTER_NEAREST ))
+        else:
+            df_cm = pd.DataFrame(conf, self.classes, self.classes)
+            plt.figure(figsize=(15,15))
+            sn.set(font_scale=1.4)
+            sn.heatmap(df_cm, annot=True, annot_kws={"size": 20}, fmt="g")
+            plt.savefig("{}.jpg".format(path))
+            sn.reset_orig()
+
+
+    def loadCheckpoint (self, path):
+        print("Loading checkpoint at {}".format(path))
+        self.model.load_state_dict(torch.load(path))
 
 
 if __name__ == "__main__":
@@ -246,10 +373,20 @@ if __name__ == "__main__":
         classes = [line for line in f.read().split("\n") if line is not ""]
 
     parser = argparse.ArgumentParser()
+    parser.add_argument("--e", default=5, type=int, help="Epochs to train for")
     parser.add_argument("--m", default="alexnet")
+    parser.add_argument("--pt", help="Checkpoint loading")
     args = parser.parse_args()
 
     model = Model(args.m, True, classes)
-    model.loadData([50, 25, 25], [True, True, True, True])
-    model.train(0.001, 0, "SGD", 1)
+    print(model.model)
+
+    if args.pt is not None:
+        model.loadCheckpoint(args.pt)
+
+    model.loadData([70, 15, 15], [True, True, True])
+    model.train(0.001, 0, "SGD", epochs=args.e)
     model.test()
+    model.writer.close()
+
+
