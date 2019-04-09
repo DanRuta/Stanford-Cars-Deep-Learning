@@ -25,9 +25,9 @@ def main(model):
     # ? momentum ?
 
     # Random Crop, Flip, Colour Jitter, Rotation
-    noAugmentations = [False, False, False, False]
-    someAugmentations = [True, True, True, False]
-    allAugmentations = [True, True, True, True]
+    noAugmentations = [False, False, False]
+    someAugmentations = [True, True, False]
+    allAugmentations = [True, True, True]
 
     for split in splits:
         for augs in [noAugmentations, someAugmentations, allAugmentations]:
