@@ -37,7 +37,6 @@ class Model():
         self.writer = writer or SummaryWriter()
 
         self.model.cuda()
-        self.model.train(False)
         self.model.eval()
 
         # Freeze training for all pretrained layers
@@ -58,7 +57,7 @@ class Model():
         self.totalValidationIts = 0
         self.totalTestingIts = 0
 
-        self.validationPatience = 3
+        self.validationPatience = 5
 
         self.log = print
 
@@ -150,7 +149,7 @@ class Model():
             self.log("-" * 10)
             self.log()
 
-        torch.save(self.bestModelWeights, "checkpoints/{}-{}.pt".format(self.name, self.bestEpoch))
+        torch.save(self.bestModelWeights, "checkpoints/{}__{}-{}.pt".format(bestLoss, self.name, self.bestEpoch))
 
 
     def validate (self):

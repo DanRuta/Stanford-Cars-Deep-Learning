@@ -47,7 +47,7 @@ def main(architecture):
         classes = [line for line in f.read().split("\n") if line is not ""]
 
     splits = [[50,25,25], [70,15,15], [80,10,10]]
-    learningRates = [0.05, 0.01, 0.005]
+    learningRates = [0.01, 0.005, 0.001]
     L2s = [0.005, 0.001, 0.0005]
     optimisers = ["SGD", "RMSprop", "Adam"]
 
