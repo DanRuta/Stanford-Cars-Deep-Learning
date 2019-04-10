@@ -66,7 +66,7 @@ class Model():
         self.log("\nTraining...")
 
         self.model.cuda()
-        self.optimizer = getattr(optim, optimFn)(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay)
+        self.optimizer = getattr(optim, optimFn)(self.model.parameters(), lr=lr, momentum=0.5, weight_decay=weight_decay)
 
         # Back up current weights
         self.bestModelWeights = copy.deepcopy(self.model.state_dict())
@@ -102,6 +102,9 @@ class Model():
 
                 _, preds = torch.max(outputs.data, 1)
                 loss = self.criterion(outputs, labels)
+
+                if math.isnan(loss):
+                    raise("Loss is nan")
 
                 loss.backward()
                 self.optimizer.step()
@@ -140,6 +143,7 @@ class Model():
                 self.bestEpoch = epoch + 1
             else:
                 self.validationPatienceCounter += 1
+                self.log("Validation loss not improved. Now: {:.4f}, Old: {:.4f}\tPatience: {}/{}".format(self.validationLoss, bestLoss, self.validationPatienceCounter, self.validationPatience))
 
                 if self.validationPatienceCounter >= self.validationPatience:
                     self.log("Validation loss has not improved for {} epochs. Stopping training, and saving the best weights.".format(self.validationPatience))
