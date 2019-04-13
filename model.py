@@ -91,7 +91,7 @@ class Model():
                 if i % 25 == 0 or i == int(self.numTrainingSamples/self.batch_size)-1:
                     print("\rTraining iteration: {}/{}".format(i*self.batch_size, self.numTrainingSamples), end='', flush=True)
                     if i>0:
-                        self.writer.add_scalar("{}/1.training/loss".format(self.name), lastLoss, self.totalTrainingIts)
+                        self.writer.add_scalar("{}/1.training/loss".format(self.name), lastLoss/self.batch_size, self.totalTrainingIts)
                         self.writer.add_scalar("{}/1.training/accuracy".format(self.name), self.trainingAccuracy*100, self.totalTrainingIts)
 
                 inputs, labels = data
@@ -141,6 +141,7 @@ class Model():
                 bestLoss = self.validationLoss / self.numValidationSamples
                 self.bestModelWeights = copy.deepcopy(self.model.state_dict())
                 self.bestEpoch = epoch + 1
+                self.validationPatienceCounter = 0
             else:
                 self.validationPatienceCounter += 1
                 self.log("Validation loss not improved. Now: {:.4f}, Old: {:.4f}\tPatience: {}/{}".format(self.validationLoss, bestLoss, self.validationPatienceCounter, self.validationPatience))
@@ -169,7 +170,7 @@ class Model():
                 if i % 25 == 0 or i == int(self.numValidationSamples/self.batch_size)-1:
                     print("\rValidation iteration: {}/{}".format(i*self.batch_size, self.numValidationSamples), end='', flush=True)
                     if i>0:
-                        self.writer.add_scalar("{}/2.validation/loss".format(self.name), lastLoss, self.totalValidationIts)
+                        self.writer.add_scalar("{}/2.validation/loss".format(self.name), lastLoss/self.batch_size, self.totalValidationIts)
                         self.writer.add_scalar("{}/2.validation/accuracy".format(self.name), self.validationAccuracy*100, self.totalValidationIts)
 
                 inputs, labels = data
@@ -321,7 +322,7 @@ class Model():
         # Classification report
         report = classification_report(self.correctLabels, self.predictedLabels, target_names=self.classes)
 
-        with open("checkpoints/{}-{}.txt".format(self.name, self.bestEpoch), "w+") as f:
+        with open("checkpoints/{}__{}-{}.txt".format(bestLoss, self.name, self.bestEpoch), "w+") as f:
             f.write("Model: {}\tEpochs: {}\tLoss: {}\tAccuracy: {:.4f}%\tTop 5: {:.4f}%\n".format(self.name, self.bestEpoch, loss, accuracy*100, top5*100))
             f.write(report)
 
@@ -330,11 +331,11 @@ class Model():
         # Too many classes break the confusion matrix plot, so manually render a heatmap using OpenCV instead
         if len(self.classes) > 20:
             conf.normalized = True
-            self.plotConfHeatmap(conf.value(), "checkpoints/{}-{}_n".format(self.name, self.bestEpoch))
+            self.plotConfHeatmap(conf.value(), "checkpoints/{}__{}-{}_n".format(bestLoss, self.name, self.bestEpoch))
         else:
-            self.plotConfMatrix(conf.value(), "checkpoints/{}-{}".format(self.name, self.bestEpoch))
+            self.plotConfMatrix(conf.value(), "checkpoints/{}__{}-{}".format(bestLoss, self.name, self.bestEpoch))
             conf.normalized = True
-            self.plotConfMatrix(conf.value(), "checkpoints/{}-{}_n".format(self.name, self.bestEpoch))
+            self.plotConfMatrix(conf.value(), "checkpoints/{}__{}-{}_n".format(bestLoss, self.name, self.bestEpoch))
 
     # https://gist.github.com/weiaicunzai/2a5ae6eac6712c70bde0630f3e76b77b
     def getTopKAccuracy (self, output, labels, k):

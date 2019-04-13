@@ -76,7 +76,7 @@ def trainParams (logger, isPretrained, architecture, classes, split, augs, lr, l
 
     augType = 0 if augs[0] is False else 1
 
-    name = "{}_{}_{}-{}-{}_A{}_LR{}_R{}_O-{}".format("pt" if isPretrained else "new", architecture, train, val, test, augType, lr, l2, optim)
+    name = "{}_{}_{}-{}-{}_A{}_LR{}_R{}_O-{}".format(architecture, "pt" if isPretrained else "new", train, val, test, augType, lr, l2, optim)
     try:
         model = Model(architecture, isPretrained, classes, name, logger.writer)
         model.setLogger(logger)
