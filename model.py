@@ -71,7 +71,7 @@ class Model():
         # Back up current weights
         self.bestModelWeights = copy.deepcopy(self.model.state_dict())
         self.validationPatienceCounter = 0
-        bestLoss = math.inf
+        self.bestLoss = math.inf
         correct = 0
         total = 0
 
@@ -136,15 +136,15 @@ class Model():
             self.log("Average accuracy (val): {:.4f}%".format(self.validationAccuracy*100))
             self.writer.add_scalar("{}/1.training/perEpochLoss".format(self.name), self.trainingLoss / self.numTrainingSamples, epoch)
 
-            if self.validationLoss / self.numValidationSamples < bestLoss:
-                self.log("Deep copying new best model. (Loss of {}, over {})".format(self.validationLoss / self.numValidationSamples, bestLoss))
-                bestLoss = self.validationLoss / self.numValidationSamples
+            if self.validationLoss / self.numValidationSamples < self.bestLoss:
+                self.log("Deep copying new best model. (Loss of {}, over {})".format(self.validationLoss / self.numValidationSamples, self.bestLoss))
+                self.bestLoss = self.validationLoss / self.numValidationSamples
                 self.bestModelWeights = copy.deepcopy(self.model.state_dict())
                 self.bestEpoch = epoch + 1
                 self.validationPatienceCounter = 0
             else:
                 self.validationPatienceCounter += 1
-                self.log("Validation loss not improved. Now: {:.4f}, Old: {:.4f}\tPatience: {}/{}".format(self.validationLoss, bestLoss, self.validationPatienceCounter, self.validationPatience))
+                self.log("Validation loss not improved. Now: {:.4f}, Old: {:.4f}\tPatience: {}/{}".format(self.validationLoss, self.bestLoss, self.validationPatienceCounter, self.validationPatience))
 
                 if self.validationPatienceCounter >= self.validationPatience:
                     self.log("Validation loss has not improved for {} epochs. Stopping training, and saving the best weights.".format(self.validationPatience))
@@ -154,7 +154,7 @@ class Model():
             self.log("-" * 10)
             self.log()
 
-        torch.save(self.bestModelWeights, "checkpoints/{}__{}-{}.pt".format(bestLoss, self.name, self.bestEpoch))
+        torch.save(self.bestModelWeights, "checkpoints/{}__{}-{}.pt".format(self.bestLoss, self.name, self.bestEpoch))
 
 
     def validate (self):
@@ -322,7 +322,7 @@ class Model():
         # Classification report
         report = classification_report(self.correctLabels, self.predictedLabels, target_names=self.classes)
 
-        with open("checkpoints/{}__{}-{}.txt".format(bestLoss, self.name, self.bestEpoch), "w+") as f:
+        with open("checkpoints/{}__{}-{}.txt".format(self.bestLoss, self.name, self.bestEpoch), "w+") as f:
             f.write("Model: {}\tEpochs: {}\tLoss: {}\tAccuracy: {:.4f}%\tTop 5: {:.4f}%\n".format(self.name, self.bestEpoch, loss, accuracy*100, top5*100))
             f.write(report)
 
@@ -331,11 +331,11 @@ class Model():
         # Too many classes break the confusion matrix plot, so manually render a heatmap using OpenCV instead
         if len(self.classes) > 20:
             conf.normalized = True
-            self.plotConfHeatmap(conf.value(), "checkpoints/{}__{}-{}_n".format(bestLoss, self.name, self.bestEpoch))
+            self.plotConfHeatmap(conf.value(), "checkpoints/{}__{}-{}_n".format(self.bestLoss, self.name, self.bestEpoch))
         else:
-            self.plotConfMatrix(conf.value(), "checkpoints/{}__{}-{}".format(bestLoss, self.name, self.bestEpoch))
+            self.plotConfMatrix(conf.value(), "checkpoints/{}__{}-{}".format(self.bestLoss, self.name, self.bestEpoch))
             conf.normalized = True
-            self.plotConfMatrix(conf.value(), "checkpoints/{}__{}-{}_n".format(bestLoss, self.name, self.bestEpoch))
+            self.plotConfMatrix(conf.value(), "checkpoints/{}__{}-{}_n".format(self.bestLoss, self.name, self.bestEpoch))
 
     # https://gist.github.com/weiaicunzai/2a5ae6eac6712c70bde0630f3e76b77b
     def getTopKAccuracy (self, output, labels, k):
