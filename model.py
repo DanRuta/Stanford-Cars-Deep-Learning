@@ -144,7 +144,7 @@ class Model():
                 self.validationPatienceCounter = 0
             else:
                 self.validationPatienceCounter += 1
-                self.log("Validation loss not improved. Now: {:.4f}, Old: {:.4f}\tPatience: {}/{}".format(self.validationLoss, self.bestLoss, self.validationPatienceCounter, self.validationPatience))
+                self.log("Validation loss not improved. Now: {:.4f}, Old: {:.4f}\tPatience: {}/{}".format(self.validationLoss / self.numValidationSamples, self.bestLoss, self.validationPatienceCounter, self.validationPatience))
 
                 if self.validationPatienceCounter >= self.validationPatience:
                     self.log("Validation loss has not improved for {} epochs. Stopping training, and saving the best weights.".format(self.validationPatience))
