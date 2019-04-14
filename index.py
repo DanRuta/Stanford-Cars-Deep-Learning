@@ -83,6 +83,8 @@ def trainParams (logger, isPretrained, architecture, classes, split, augs, lr, l
         model.loadData(split, augs)
         model.train(lr, weight_decay=l2, optimFn=optim, epochs=50)
         model.test()
+    except KeyboardInterrupt:
+        raise
     except:
         logger.log("{} ERROR {}".format("="*10, "="*10))
         logger.log(traceback.format_exc())
