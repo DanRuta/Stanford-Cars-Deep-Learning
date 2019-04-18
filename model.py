@@ -35,8 +35,9 @@ class Model():
         self.model = getattr(models, architecture)(pretrained=pretrained)
         self.name = name or architecture
         self.writer = writer or SummaryWriter()
+        self.device = ("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.model.cuda()
+        self.model.to(torch.device(self.device))
         self.model.eval()
 
         # Freeze training for all pretrained layers
@@ -65,7 +66,7 @@ class Model():
 
         self.log("\nTraining...")
 
-        self.model.cuda()
+        self.model.to(torch.device(self.device))
         self.optimizer = getattr(optim, optimFn)(self.model.parameters(), lr=lr, momentum=0.5, weight_decay=weight_decay)
 
         # Back up current weights
@@ -95,7 +96,7 @@ class Model():
                         self.writer.add_scalar("{}/1.training/accuracy".format(self.name), self.trainingAccuracy*100, self.totalTrainingIts)
 
                 inputs, labels = data
-                inputs, labels = Variable(inputs.cuda()), Variable(labels.cuda())
+                inputs, labels = Variable(inputs.to(torch.device(self.device))), Variable(labels.to(torch.device(self.device)))
 
                 self.optimizer.zero_grad()
                 outputs = self.model(inputs)
@@ -174,7 +175,7 @@ class Model():
                         self.writer.add_scalar("{}/2.validation/accuracy".format(self.name), self.validationAccuracy*100, self.totalValidationIts)
 
                 inputs, labels = data
-                inputs, labels = Variable(inputs.cuda()), Variable(labels.cuda())
+                inputs, labels = Variable(inputs.to(torch.device(self.device))), Variable(labels.to(torch.device(self.device)))
 
                 self.optimizer.zero_grad()
                 outputs = self.model(inputs)
@@ -225,7 +226,7 @@ class Model():
                 self.model.eval()
 
                 inputs, labels = data
-                inputs, labels = Variable(inputs.cuda()), Variable(labels.cuda())
+                inputs, labels = Variable(inputs.to(torch.device(self.device))), Variable(labels.to(torch.device(self.device)))
 
                 outputs = self.model(inputs)
 
