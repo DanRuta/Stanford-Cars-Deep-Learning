@@ -67,7 +67,10 @@ class Model():
         self.log("\nTraining...")
 
         self.model.to(torch.device(self.device))
-        self.optimizer = getattr(optim, optimFn)(self.model.parameters(), lr=lr, momentum=0.5, weight_decay=weight_decay)
+        if optimFn=="SGD" or optimFn=="RMSProp":
+            self.optimizer = getattr(optim, optimFn)(self.model.parameters(), lr=lr, momentum=0.5, weight_decay=weight_decay)
+        else:
+            self.optimizer = getattr(optim, optimFn)(self.model.parameters(), lr=lr, weight_decay=weight_decay)
 
         # Back up current weights
         self.bestModelWeights = copy.deepcopy(self.model.state_dict())
