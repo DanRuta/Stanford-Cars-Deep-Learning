@@ -27,40 +27,54 @@ from tensorboardX import SummaryWriter
 
 class Model():
 
-    def __init__ (self, architecture, pretrained, classes, name=None, writer=None):
+    def __init__ (self, architecture="alexnet", pretrained=False, classes=[], name=None, writer=None):
 
         self.classes = classes
-        self.architecture = architecture
-        self.batch_size = 4
-        self.model = getattr(models, architecture)(pretrained=pretrained)
         self.name = name or architecture
         self.writer = writer or SummaryWriter()
         self.device = ("cuda" if torch.cuda.is_available() else "cpu")
+        self.batch_size = 4
 
-        self.model.to(torch.device(self.device))
-        self.model.eval()
-
-        # Freeze training for all pretrained layers
-        if pretrained:
-            for param in self.model.features.parameters():
-                param.require_grad = False
-
-        # Remove the last layer, and add one with <classes> length
-        num_features = self.model.classifier[6].in_features
-        lastLayers = list(self.model.classifier.children())[:-1]
-        lastLayers.extend([nn.Linear(num_features, len(self.classes))])
-
-        # Overwrite with new topology
-        self.model.classifier = nn.Sequential(*lastLayers)
         self.criterion = nn.CrossEntropyLoss()
         self.bestEpoch = 1
         self.totalTrainingIts = 0
         self.totalValidationIts = 0
         self.totalTestingIts = 0
 
-        self.validationPatience = 5
+        self.validationPatience = 20
 
         self.log = print
+
+        self.architecture = architecture
+        self.model = getattr(models, architecture)(pretrained=pretrained)
+
+        # Freeze training for all pretrained layers
+        if pretrained:
+            for param in self.model.parameters():
+                param.require_grad = False
+
+
+        # Adjust architecture to match the dataset, if an existing torchvision model is given
+        if isinstance(architecture, str):
+            if architecture=="alexnet" or architecture.startswith("vgg"):
+                # Remove the last layer, and add one with <classes> length
+                num_features = self.model.classifier[6].in_features
+                lastLayers = list(self.model.classifier.children())[:-1]
+                lastLayers.extend([nn.Linear(num_features, len(self.classes))])
+
+                # Overwrite with new topology
+                self.model.classifier = nn.Sequential(*lastLayers)
+            else:
+                # Overwrite the fully connected layer with a fresh one
+                num_features = self.model.fc.in_features
+                self.model.fc = nn.Linear(num_features, len(self.classes))
+
+
+        self.model.to(torch.device(self.device))
+        self.model.eval()
+
+
+
 
     def train (self, lr=0.001, weight_decay=0, optimFn="SGD", epochs=1):
 
@@ -384,14 +398,16 @@ class Model():
 
 
     def loadCheckpoint (self, path):
-        self.log("Loading checkpoint at {}".format(path))
-        self.model.load_state_dict(torch.load(path))
+        self.log("Loading checkpoint at {}".format(os.path.join(os.getcwd(), path)))
+        self.model.load_state_dict(torch.load(os.path.join(os.getcwd(), path)))
+
 
     def setLogger (self, logger):
         self.log = logger.log
 
 
 if __name__ == "__main__":
+
 
     # Read the classifications
     classes = []

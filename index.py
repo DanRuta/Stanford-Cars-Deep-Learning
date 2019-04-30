@@ -8,6 +8,7 @@ from tensorboardX import SummaryWriter
 
 from preProcessData import preprocess
 from model import Model
+from ensemble import EnsembleVoter
 
 
 class Logger(object):
@@ -61,8 +62,88 @@ def main(architecture):
                 for lr in learningRates:
                     trainParams(logger, False, architecture, classes, split, augs, lr, l2, "SGD")
                     trainParams(logger, True, architecture, classes, split, augs, lr, l2, "SGD")
+def doEnsemble():
+
+    print("Doing ensemble")
+
+
+    # Initializing logger
+    logger = Logger()
+    logger.log("Start")
+
+    # Read the classifications
+    classes = []
+    with open("data_pre/classes.txt") as f:
+        classes = [line for line in f.read().split("\n") if line is not ""]
+
+    # print(os.stat("./checkpoints/0.5957364133432874__alexnet-26.pt"))
+
+    # model1 = Model("checkpoints/0.5957364133432874__alexnet-26.pt", classes=classes)
+    # model.loadData([70,15,15], [True, True, True])
+    # model1.test()
+    # model2 = Model(architecture, isPretrained, classes, name, logger.writer)
+
+
+    architecture = "resnet50"
+    noAugmentations = [False, False, False]
+    allAugmentations = [True, True, True]
+
+    bestConfiguration = [[80,10,10], allAugmentations, 0.001, 0, True]
+    train, val, test = bestConfiguration[0]
+
+
+    lr, l2, optim = bestConfiguration[2], bestConfiguration[3], "SGD"
+    augType = 0 if bestConfiguration[1][0] is False else 1
+    name = "{}-ensemble-{}-{}-{}_A{}_LR{}_R{}_O-{}".format(architecture, train, val, test, augType, lr, l2, optim)
+
+
+    logger.log(name)
+    logger.log("\n===============================")
+    logger.log("Ensemble for 1 Model")
+    logger.log("===============================\n")
+
+    models = []
+    newModel = Model(architecture, bestConfiguration[4], classes, writer=logger.writer)
+    newModel.setLogger(logger)
+    newModel.loadData(bestConfiguration[0], bestConfiguration[1])
+    newModel.train(bestConfiguration[2], weight_decay=bestConfiguration[3], optimFn="SGD", epochs=100)
+    models.append(newModel)
+
+
+    for mI in range(0, 30):
+
+        if mI!=0:
+            logger.log("\n===============================")
+            logger.log("Ensemble for {} Models".format(len(models)+1))
+            logger.log("===============================\n")
+
+            # name = "resnet18-ensemble-{}-{}-{}_A{}_LR{}_R{}_O-{}".format(train, val, test, augType, lr, l2, optim)
+            newModel = Model(architecture, bestConfiguration[4], classes, writer=logger.writer)
+            newModel.setLogger(logger)
+            newModel.loadData(bestConfiguration[0], bestConfiguration[1])
+
+            logger.log("\nTraining new model\n")
+            newModel.train(bestConfiguration[2], weight_decay=bestConfiguration[3], optimFn="SGD", epochs=100)
+
+            models.append(newModel)
+
+
+        logger.log("\nTesting Ensemble\n")
+        voter = EnsembleVoter(models, classes, name, writer=logger.writer)
+        voter.setLogger(logger)
+        voter.loadData(bestConfiguration[0])
+        voter.test()
 
     logger.writer.close()
+
+
+
+
+
+
+
+
+
 
 
 
@@ -71,7 +152,7 @@ def trainParams (logger, isPretrained, architecture, classes, split, augs, lr, l
     [train, val, test] = split
 
     logger.log("\n===============================")
-    logger.log("Split: {}-{}-{}\tAugmentations: {}\tLearning Rate: {}\tRegularization: {}\tOptimiser: {}\tPre-trained: {}".format(train, val, test, augs, lr, l2, optim, isPretrained))
+    logger.log("Architecture: {}\tSplit: {}-{}-{}\tAugmentations: {}\tLearning Rate: {}\tRegularization: {}\tOptimiser: {}\tPre-trained: {}".format(architecture, train, val, test, augs, lr, l2, optim, isPretrained))
     logger.log("===============================\n")
 
     augType = 0 if augs[0] is False else 1
@@ -81,7 +162,7 @@ def trainParams (logger, isPretrained, architecture, classes, split, augs, lr, l
         model = Model(architecture, isPretrained, classes, name, logger.writer)
         model.setLogger(logger)
         model.loadData(split, augs)
-        model.train(lr, weight_decay=l2, optimFn=optim, epochs=50)
+        model.train(lr, weight_decay=l2, optimFn=optim, epochs=200)
         model.test()
     except KeyboardInterrupt:
         raise
@@ -95,4 +176,5 @@ if __name__ == "__main__":
     parser.add_argument("--m", default="alexnet") # alexnet, vgg19, <googlenet/some resnet>
     args = parser.parse_args()
 
-    main(args.m)
+    # main(args.m)
+    doEnsemble()
