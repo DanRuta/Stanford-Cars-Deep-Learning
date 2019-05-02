@@ -9,8 +9,6 @@ import numpy as np
 import cv2 as cv
 # https://forums.fast.ai/t/image-normalization-in-pytorch/7534/6
 
-
-
 def preprocess(overwriteData=False, skipWritingFiles=False):
 
     totalImages = 0
@@ -35,10 +33,9 @@ def preprocess(overwriteData=False, skipWritingFiles=False):
         # Check if the output has already been created, and skip this
         if os.path.exists("data") is False:
             os.mkdir("data")
-            os.mkdir("data/augmentations")
             prepareDataFolder(classes, splits)
 
-        elif os.path.exists("./data/augmentations"):
+        elif os.path.exists("./data/50-25-25"):
             if not overwriteData:
                 print("Data has already been pre-processed.")
                 return
@@ -101,7 +98,6 @@ def preprocess(overwriteData=False, skipWritingFiles=False):
 
 
                 cv.imwrite("./data/{}/{}/{}/{}".format(splitFolder, folder, classification, imgName), newImg)
-                cv.imwrite("./data/augmentations/{}/{}/{}/{}".format(splitFolder, folder, classification, imgName), newImg)
 
     print("\nFinished pre-processing data ({} images)".format(totalImages))
 
@@ -124,7 +120,6 @@ def prepareDataFolder (classes, splits):
 
     shutil.rmtree("./data")
     os.mkdir("data")
-    os.mkdir("data/augmentations")
 
     print("Preparing folder")
     for [training, validation, test] in splits:
@@ -133,21 +128,11 @@ def prepareDataFolder (classes, splits):
         os.mkdir("data/{}-{}-{}/val".format(training, validation, test))
         os.mkdir("data/{}-{}-{}/test".format(training, validation, test))
 
-        os.mkdir("data/augmentations/{}-{}-{}".format(training, validation, test))
-        os.mkdir("data/augmentations/{}-{}-{}/train".format(training, validation, test))
-        os.mkdir("data/augmentations/{}-{}-{}/val".format(training, validation, test))
-        os.mkdir("data/augmentations/{}-{}-{}/test".format(training, validation, test))
-
         # Class folders
         for c in range(0, len(classes)):
             os.mkdir("data/{}-{}-{}/train/{}".format(training, validation, test, c+1))
             os.mkdir("data/{}-{}-{}/val/{}".format(training, validation, test, c+1))
             os.mkdir("data/{}-{}-{}/test/{}".format(training, validation, test, c+1))
-
-            os.mkdir("data/augmentations/{}-{}-{}/train/{}".format(training, validation, test, c+1))
-            os.mkdir("data/augmentations/{}-{}-{}/val/{}".format(training, validation, test, c+1))
-            os.mkdir("data/augmentations/{}-{}-{}/test/{}".format(training, validation, test, c+1))
-
 
 if __name__=="__main__":
     print("Starting...")

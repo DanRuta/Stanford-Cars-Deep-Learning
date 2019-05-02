@@ -292,14 +292,12 @@ class Model():
 
 
     def loadData (self, split, augmentations):
-        # Look in the augmentations sub-directory, if any augmentations have been selected
-        augPath = augmentations[0] or augmentations[1] or augmentations[2]
-        augPath = "augmentations/" if augPath else ""
+
         split = "{}-{}-{}".format(split[0], split[1], split[2])
 
-        traindir = os.path.join(os.getcwd(), "data/{}{}/train".format(augPath, split))
-        valdir = os.path.join(os.getcwd(), "data/{}{}/val".format(augPath, split))
-        testdir = os.path.join(os.getcwd(), "data/{}{}/test".format(augPath, split))
+        traindir = os.path.join(os.getcwd(), "data/{}/train".format(split))
+        valdir = os.path.join(os.getcwd(), "data/{}/val".format(split))
+        testdir = os.path.join(os.getcwd(), "data/{}/test".format(split))
         # Expects as input normalized x * H * W images, where H and W have to be at least 224
         # Also needs mean and std as follows:
         normalize = transforms.Normalize(mean=[0.46989, 0.45955, 0.45476], std=[0.266161, 0.265055, 0.269770])
