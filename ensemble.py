@@ -85,18 +85,11 @@ class EnsembleVoter(Model):
 
                 total += labels.size(0)
                 lastLoss = 0
-                # votes = [] # Vote indices. Size: (noModels x batch_size)
-                # Vote counts for classes. Size: (noModels x batchSize x noClasses)
-                # maxClassVotes = np.zeros((len(self.models), self.batch_size, len(self.classes)))
-
 
                 # Final output needs to be 1 class index per batch
                 # Initially, each sub-item will be an array of votes (array length being number of models), before they get counted
-                # ensembleVotes = [[] for i in range(self.batch_size)]
                 ensembleVotes = [[] for i in range(len(labels))]
 
-                # pre_bestVotes = np.zeros((self.batch_size, len(self.models)))
-                # bestVotes = np.zeros((self.batch_size))
                 for model in self.models:
 
                     outputs = model.model(inputs)
@@ -109,55 +102,22 @@ class EnsembleVoter(Model):
                     for b in range(len(preds)):
                         ensembleVotes[b].append(preds[b])
 
-
-
-                    # correct += (preds == labels).sum().item()
-
                     # Aggregate the total loss and accuracy values
                     lastLoss += loss.item()
                     self.testLoss += loss.item()
 
                     del outputs, preds
 
-
-
-
                 # Get the maximum occuring integer in each of the ensembleVotes array's sub-arrays, to end up with a batch_size sized array
-                # ensembleVotes = [max(set(subArr), key=subArr.count) for subArr in ensembleVotes if len(subArr)>0]
                 maxEnsembleVotes = [max(set(subArr), key=subArr.count) for subArr in ensembleVotes if len(subArr)>0]
-                # print("test")
-                # print(test)
-
-                # maxEnsembleVotes = []
-                # for subArr in ensembleVotes:
-                #     try:
-                #         # print(subArr)
-                #         if len(subArr) > 0:
-                #             maxEnsembleVotes.append(max(set(subArr), key=subArr.count))
-                #         else:
-                #             maxEnsembleVotes.append([])
-                #         # ensembleVotes = maxEnsembleVotes
-
-                #     except:
-                #         print("subArr")
-                #         # print(ensembleVotes)
-                #         print(subArr)
-                #         raise
 
                 # Create a fake 'output'-like data structure from the ensembleVotes, encoded as one-hot vectors, for use in other metrics.
                 # It should still be fine, as only the top value is important, which corresponds to a 1, in the one-hot vector
-                # ensembleOutput = np.zeros((self.batch_size, len(self.classes)))
                 ensembleOutput = np.zeros((len(maxEnsembleVotes), len(self.classes)))
-                # for b in range(self.batch_size):
+
                 for b in range(len(maxEnsembleVotes)):
                     if len(ensembleVotes[b]) > 0:
                         ensembleOutput[b][maxEnsembleVotes[b]] = 1
-                    # try:
-                    # except:
-                    #     print("ensembleVotes")
-                    #     print("b: {}".format(b))
-                    #     print(ensembleVotes[b])
-                    #     raise
 
                 # Continue as normal, using ensembleVotes and ensembleOutput instead of a normal single model's batch set of predictions
                 correct += (torch.Tensor(maxEnsembleVotes).long() == labels.cpu()).sum().item()
@@ -171,7 +131,6 @@ class EnsembleVoter(Model):
 
                 # Collect data for the classification report
                 labelVals = np.array(labels.data.cpu())
-                # predVals = np.array(maxEnsembleVotes.data.cpu())
                 predVals = np.array(maxEnsembleVotes)
 
                 for b in range(min(len(labelVals), len(predVals))):
@@ -182,21 +141,6 @@ class EnsembleVoter(Model):
                 del inputs, labels
                 torch.cuda.empty_cache()
                 self.totalTestingIts += self.batch_size
-
-
-
-                # for mv in range(len(votes)):
-                #     modelVotes = votes[mv]
-
-                #     for b in range(self.batch_size):
-                #         vote = modelVotes[b]
-                #         maxClassVotes[mv][b][vote] += 1
-
-
-                # # Get an index value for the top vote, in each numClasses sized array, in each batch, for each model
-                # voteIndeces = [[max(maxClassVotes[m][b]) for b in range(self.batch_size)] for m in range(len(self.models))]
-
-
 
                 lastLoss /= len(self.models)
             self.log()

@@ -49,23 +49,38 @@ def main(architecture):
 
     splits = [[80,10,10], [50,25,25], [70,15,15]]
     learningRates = [0.001, 0.01, 0.005]
-    L2s = [0.0005, 0.001, 0.005]
+    L2s = [0, 0.0005, 0.001]
     optimisers = ["SGD", "RMSprop", "Adam"]
 
     # Flip, Colour Jitter, Rotation
     noAugmentations = [False, False, False]
     allAugmentations = [True, True, True]
 
-    for l2 in L2s:
-        for split in splits:
-            for augs in [allAugmentations, noAugmentations]:
-                for lr in learningRates:
-                    trainParams(logger, False, architecture, classes, split, augs, lr, l2, "SGD")
-                    trainParams(logger, True, architecture, classes, split, augs, lr, l2, "SGD")
+    # for l2 in L2s:
+    #     for split in splits:
+    #         for augs in [allAugmentations, noAugmentations]:
+    #             for lr in learningRates:
+    #                 trainParams(logger, False, architecture, classes, split, augs, lr, l2, "SGD")
+    #                 trainParams(logger, True, architecture, classes, split, augs, lr, l2, "SGD")
+
+    runs = [
+        ["resnet50", [80,10,10], allAugmentations, 0.001, 0, True],
+        ["resnet50", [80,10,10], noAugmentations, 0.005, 0, False],
+        ["resnet50", [70,15,15], noAugmentations, 0.005, 0, False],
+        ["resnet50", [70,15,15], allAugmentations, 0.005, 0, False],
+    ]
+
+    for run in runs:
+        trainParams(logger, run[5], run[0], classes, run[1], run[2], run[3], run[4], "SGD")
+
+    logger.writer.close()
+
+
+
+
 def doEnsemble():
 
     print("Doing ensemble")
-
 
     # Initializing logger
     logger = Logger()
@@ -75,14 +90,6 @@ def doEnsemble():
     classes = []
     with open("data_pre/classes.txt") as f:
         classes = [line for line in f.read().split("\n") if line is not ""]
-
-    # print(os.stat("./checkpoints/0.5957364133432874__alexnet-26.pt"))
-
-    # model1 = Model("checkpoints/0.5957364133432874__alexnet-26.pt", classes=classes)
-    # model.loadData([70,15,15], [True, True, True])
-    # model1.test()
-    # model2 = Model(architecture, isPretrained, classes, name, logger.writer)
-
 
     architecture = "resnet50"
     noAugmentations = [False, False, False]
@@ -117,7 +124,6 @@ def doEnsemble():
             logger.log("Ensemble for {} Models".format(len(models)+1))
             logger.log("===============================\n")
 
-            # name = "resnet18-ensemble-{}-{}-{}_A{}_LR{}_R{}_O-{}".format(train, val, test, augType, lr, l2, optim)
             newModel = Model(architecture, bestConfiguration[4], classes, writer=logger.writer)
             newModel.setLogger(logger)
             newModel.loadData(bestConfiguration[0], bestConfiguration[1])
@@ -135,14 +141,6 @@ def doEnsemble():
         voter.test()
 
     logger.writer.close()
-
-
-
-
-
-
-
-
 
 
 
@@ -174,7 +172,11 @@ def trainParams (logger, isPretrained, architecture, classes, split, augs, lr, l
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--m", default="alexnet") # alexnet, vgg19, <googlenet/some resnet>
+    parser.add_argument("--e", default=False, help="Do ensembles or not")
     args = parser.parse_args()
 
-    # main(args.m)
-    doEnsemble()
+    if args.e:
+        doEnsemble()
+    else:
+        main(args.m)
+
