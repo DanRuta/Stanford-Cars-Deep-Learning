@@ -3,6 +3,8 @@
 
 This repository contains the implementation of the *Image Processing and Deep Learning* assignment, from the 2018-2019 *Computer Vision, Robotics, and Machine Learning* course, at *University of Surrey*.
 
+**Coursework mark: 110%**
+
 
 ## Content
 
