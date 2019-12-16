@@ -2,5 +2,5 @@ seaborn
 numpy
 matplotlib
 opencv-python
-tensorflow==1.8.0
+tensorflow==1.15.0
 tensorboardX
